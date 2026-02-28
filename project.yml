@@ -1,0 +1,34 @@
+name: ScreenCommentator
+options:
+  bundleIdPrefix: com.local
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Automatic
+    PRODUCT_NAME: ScreenCommentator
+
+targets:
+  ScreenCommentator:
+    type: application
+    platform: macOS
+    sources:
+      - path: ScreenCommentator
+        excludes:
+          - "Resources/Info.plist"
+          - "Resources/*.entitlements"
+    settings:
+      base:
+        INFOPLIST_FILE: ScreenCommentator/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ScreenCommentator/Resources/ScreenCommentator.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.local.screencommentator
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: false
+        SWIFT_STRICT_CONCURRENCY: complete
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
