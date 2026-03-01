@@ -95,7 +95,6 @@ struct ContentView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
-            .disabled(viewModel.isRunning)
 
             if viewModel.selectedProvider == .ollama {
                 Picker("Model", selection: $viewModel.selectedOllamaModel) {
@@ -104,7 +103,6 @@ struct ContentView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .disabled(viewModel.isRunning)
             } else {
                 Picker("Model", selection: $viewModel.selectedGeminiModel) {
                     ForEach(GeminiModel.allCases) { model in
@@ -112,13 +110,12 @@ struct ContentView: View {
                     }
                 }
                 .pickerStyle(.menu)
-                .disabled(viewModel.isRunning)
 
                 SecureField("API Key", text: $viewModel.geminiApiKey)
                     .textFieldStyle(.roundedBorder)
-                    .disabled(viewModel.isRunning)
             }
         }
+        .disabled(viewModel.isRunning)
     }
 
     private var generationSection: some View {
@@ -140,7 +137,7 @@ struct ContentView: View {
                 Text("\(viewModel.baseCommentCount)")
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
-                    .frame(width: 16, alignment: .trailing)
+                    .frame(width: 20, alignment: .trailing)
             }
 
             ForEach(Persona.allCases) { persona in
@@ -196,17 +193,13 @@ struct ContentView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        Group {
-            if viewModel.selectedProvider == .ollama {
-                Text("Requires Ollama with a vision model")
-            } else {
-                Text("Uses Google Gemini API")
-            }
-        }
-        .font(.caption2)
-        .foregroundStyle(.tertiary)
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
+        Text(viewModel.selectedProvider == .ollama
+            ? "Requires Ollama with a vision model"
+            : "Uses Google Gemini API")
+            .font(.caption2)
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
     }
 }
 
@@ -220,7 +213,6 @@ struct PersonaRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Toggle(persona.displayName, isOn: $isEnabled)
-                .toggleStyle(.checkbox)
                 .frame(width: 100, alignment: .leading)
 
             if isEnabled {
@@ -228,7 +220,7 @@ struct PersonaRow: View {
                 Text("\(Int(weight * 100))%")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .frame(width: 32, alignment: .trailing)
+                    .frame(width: 36, alignment: .trailing)
             }
         }
     }
