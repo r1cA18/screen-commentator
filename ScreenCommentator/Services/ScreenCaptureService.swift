@@ -1,75 +1,93 @@
+@preconcurrency import ScreenCaptureKit
 import Foundation
-import ScreenCaptureKit
 import AppKit
 
 @MainActor
-class ScreenCaptureService {
+final class ScreenCaptureService {
     private var stream: SCStream?
-    private var filter: SCContentFilter?
+    private var streamOutput: StreamOutput?
 
-    func startCapturing(interval: TimeInterval, onCapture: @escaping (CGImage) -> Void) async throws {
-        // Get available content
+    func startCapturing(interval: TimeInterval) async throws -> AsyncStream<CGImage> {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
 
         guard let display = content.displays.first else {
             throw CaptureError.noDisplayFound
         }
 
-        // Create filter for the entire display
         let filter = SCContentFilter(display: display, excludingWindows: [])
-        self.filter = filter
 
-        // Configure stream
         let config = SCStreamConfiguration()
         config.width = Int(display.width)
         config.height = Int(display.height)
         config.minimumFrameInterval = CMTime(seconds: interval, preferredTimescale: 600)
         config.showsCursor = false
 
-        // Create stream
-        let stream = SCStream(filter: filter, configuration: config, delegate: nil)
-        self.stream = stream
+        let scStream = SCStream(filter: filter, configuration: config, delegate: nil)
 
-        // Add output handler
-        try stream.addStreamOutput(StreamOutput(onCapture: onCapture), type: .screen, sampleHandlerQueue: .main)
+        let (asyncStream, continuation) = AsyncStream.makeStream(of: CGImage.self)
 
-        // Start capture
-        try await stream.startCapture()
+        let output = StreamOutput { image in
+            continuation.yield(image)
+        }
+
+        try scStream.addStreamOutput(output, type: .screen, sampleHandlerQueue: .global())
+        try await scStream.startCapture()
+
+        self.stream = scStream
+        self.streamOutput = output
+
+        return asyncStream
     }
 
-    func stopCapturing() async {
-        guard let stream = stream else { return }
-        try? await stream.stopCapture()
+    func stopCapturing() {
+        guard let stream else { return }
+        let capturedStream = stream
         self.stream = nil
+        self.streamOutput = nil
+        Task {
+            try? await capturedStream.stopCapture()
+        }
     }
 }
 
 // MARK: - StreamOutput
-private class StreamOutput: NSObject, SCStreamOutput {
-    private let onCapture: (CGImage) -> Void
 
-    init(onCapture: @escaping (CGImage) -> Void) {
-        self.onCapture = onCapture
+private final class StreamOutput: NSObject, SCStreamOutput, @unchecked Sendable {
+    private let handler: (CGImage) -> Void
+    private let ciContext = CIContext()
+
+    init(handler: @escaping (CGImage) -> Void) {
+        self.handler = handler
     }
 
-    func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+    func stream(
+        _ stream: SCStream,
+        didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
+        of type: SCStreamOutputType
+    ) {
         guard type == .screen,
               let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
             return
         }
 
         let ciImage = CIImage(cvImageBuffer: imageBuffer)
-        let context = CIContext()
-
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
             return
         }
 
-        onCapture(cgImage)
+        handler(cgImage)
     }
 }
 
 // MARK: - Error
-enum CaptureError: Error {
+
+enum CaptureError: Error, LocalizedError {
     case noDisplayFound
+
+    var errorDescription: String? {
+        switch self {
+        case .noDisplayFound:
+            return "No display found for screen capture"
+        }
+    }
 }

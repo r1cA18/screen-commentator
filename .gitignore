@@ -2,3 +2,4 @@
 *.xcodeproj
 build/
 DerivedData/
+.claude/

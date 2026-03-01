@@ -1,37 +1,46 @@
 import SwiftUI
 import AppKit
+import ScreenCaptureKit
 
 @main
 struct ScreenCommentatorApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var viewModel = CommentViewModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(viewModel)
-        }
-
-        // Overlay window (always on top, transparent, click-through)
-        Window("Overlay", id: "overlay") {
-            OverlayWindow()
-                .environmentObject(viewModel)
                 .onAppear {
-                    configureOverlayWindow()
+                    appDelegate.showOverlay(viewModel: viewModel)
+                }
+                .task {
+                    await requestScreenCapturePermission()
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
     }
 
-    private func configureOverlayWindow() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            if let window = NSApplication.shared.windows.first(where: { $0.title == "Overlay" }) {
-                window.level = .floating
-                window.isOpaque = false
-                window.backgroundColor = .clear
-                window.ignoresMouseEvents = true
-                window.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary]
-            }
+    private func requestScreenCapturePermission() async {
+        // Trigger the Screen Recording permission dialog on app launch
+        // so the user can grant it before clicking Start.
+        _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    }
+}
+
+// MARK: - AppDelegate
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let overlayController = OverlayWindowController()
+
+    @MainActor
+    func showOverlay(viewModel: CommentViewModel) {
+        overlayController.show(viewModel: viewModel)
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        Task { @MainActor in
+            overlayController.close()
         }
     }
 }
