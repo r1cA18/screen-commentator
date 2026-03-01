@@ -35,7 +35,7 @@ struct ContentView: View {
             .frame(maxWidth: 300)
             .disabled(viewModel.isRunning)
 
-            // Model (conditional on provider)
+            // Model
             if viewModel.selectedProvider == .ollama {
                 Picker("Model", selection: $viewModel.selectedOllamaModel) {
                     ForEach(OllamaModel.allCases) { model in
@@ -61,8 +61,52 @@ struct ContentView: View {
                     .disabled(viewModel.isRunning)
             }
 
-            Toggle("Ambient Reactions", isOn: $viewModel.ambientEnabled)
-                .frame(maxWidth: 250)
+            Divider()
+
+            // Comment count
+            HStack {
+                Text("Comments: \(viewModel.baseCommentCount)")
+                    .frame(width: 110, alignment: .leading)
+                Slider(
+                    value: Binding(
+                        get: { Double(viewModel.baseCommentCount) },
+                        set: { viewModel.baseCommentCount = Int($0) }
+                    ),
+                    in: 1...10,
+                    step: 1
+                )
+            }
+            .frame(maxWidth: 250)
+
+            // Persona
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Persona")
+                    .font(.headline)
+
+                ForEach(Persona.allCases) { persona in
+                    PersonaRow(
+                        persona: persona,
+                        isEnabled: Binding(
+                            get: { viewModel.personaEnabled[persona] ?? false },
+                            set: { newValue in
+                                // Prevent disabling all personas
+                                let otherEnabled = Persona.allCases
+                                    .filter { $0 != persona }
+                                    .contains { viewModel.personaEnabled[$0] == true }
+                                if !newValue && !otherEnabled { return }
+                                viewModel.personaEnabled[persona] = newValue
+                            }
+                        ),
+                        weight: Binding(
+                            get: { viewModel.personaWeights[persona] ?? 0.5 },
+                            set: { viewModel.personaWeights[persona] = $0 }
+                        )
+                    )
+                }
+            }
+            .frame(maxWidth: 280)
+
+            Divider()
 
             // Start / Stop
             HStack(spacing: 16) {
@@ -116,6 +160,27 @@ struct ContentView: View {
             }
         }
         .padding(30)
-        .frame(width: 420, height: 560)
+        .frame(width: 420, height: 700)
+    }
+}
+
+// MARK: - PersonaRow
+
+struct PersonaRow: View {
+    let persona: Persona
+    @Binding var isEnabled: Bool
+    @Binding var weight: Double
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Toggle(persona.displayName, isOn: $isEnabled)
+                .frame(width: 100)
+            if isEnabled {
+                Slider(value: $weight, in: 0.1...1.0, step: 0.1)
+                Text(String(format: "%.0f%%", weight * 100))
+                    .font(.caption)
+                    .frame(width: 36)
+            }
+        }
     }
 }

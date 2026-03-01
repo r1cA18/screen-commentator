@@ -18,11 +18,23 @@ final class CommentViewModel: ObservableObject {
         didSet { UserDefaults.standard.set(geminiApiKey, forKey: "geminiApiKey") }
     }
 
-    // Ambient reactions
-    @Published var ambientEnabled = true
+    // Persona
+    @Published var personaEnabled: [Persona: Bool] = [
+        .standard: true,
+        .meme: true,
+        .critic: false,
+    ]
+    @Published var personaWeights: [Persona: Double] = [
+        .standard: 0.6,
+        .meme: 0.3,
+        .critic: 0.1,
+    ]
+
+    // Generation
+    @Published var baseCommentCount: Int = 5
 
     // Text style
-    @Published var fontSize: CGFloat = 28
+    @Published var fontSize: CGFloat = 40
     @Published var textOpacity: Double = 1.0
     @Published var fontWeightBold: Bool = true
 
@@ -41,53 +53,14 @@ final class CommentViewModel: ObservableObject {
         return max(1, Int((screenHeight - Self.topMargin) / Self.laneHeight))
     }
 
-    private var pendingComments: [String] = []
+    private var scheduledReleases: [(text: String, releaseAt: Date)] = []
     private var releaseTimer: Timer?
     private var captureTask: Task<Void, Never>?
 
-    // Mood-based ambient system
-    private var currentMood = "general"
+    // Excitement tracking
     private var changeLevel: Double = 0.05
+    private var lastMood: String = "general"
     private var previousThumbnail: [UInt8]?
-    private var ambientTimer: Timer?
-
-    private let reactionPool: [String: [String]] = [
-        "excitement": [
-            "すげえ", "やば", "えぐい", "つよ", "神", "マジか", "おおお",
-            "きたああ", "はんぱねえ", "レベチ", "化け物", "天才", "やばすぎ",
-            "半端ない", "すご", "つええ", "ガチ", "さすが", "最強",
-        ],
-        "funny": [
-            "wwww", "草", "ワロタ", "おもろ", "笑うわ", "腹痛い", "草生える",
-            "それは草", "くさ", "ちょwww", "だめだwww", "耐えられん", "声出た",
-            "吹いた", "やめろwww", "ずるい", "卑怯", "ツボった", "もう無理www",
-        ],
-        "surprise": [
-            "は？", "えっ", "なにこれ", "まじか", "え待って", "うそだろ",
-            "嘘やん", "マ？", "えぇ", "ファッ", "想定外", "予想外",
-            "そうはならんやろ", "ちょっと待って", "えええ", "これまじ？",
-        ],
-        "cute": [
-            "かわいい", "かわ", "尊い", "推せる", "天使", "守りたい",
-            "てぇてぇ", "癒し", "すこ", "好き", "最高にかわいい",
-            "ぬくもり", "かわいすぎ", "愛しい", "無理かわいい",
-        ],
-        "boring": [
-            "...", "眠い", "まだ？", "はよ", "何してんの", "うーん",
-            "微妙", "しーん", "おーい", "動けー", "zzz", "寝る",
-            "退屈", "まだかな", "長い",
-        ],
-        "beautiful": [
-            "きれい", "美しい", "エモい", "映え", "やばきれい", "景色やば",
-            "綺麗すぎ", "神画質", "芸術", "画力", "これは美しい", "最高",
-            "やばい綺麗", "鳥肌", "泣ける",
-        ],
-        "general": [
-            "8888", "おつ", "うぽつ", "わかる", "それな", "なるほど",
-            "たしかに", "せやな", "ほんそれ", "わかりみ", "見てる",
-            "きた", "ここすき", "いいね", "おお", "へー", "ふむ",
-        ],
-    ]
 
     init() {
         self.geminiApiKey = UserDefaults.standard.string(forKey: "geminiApiKey") ?? ""
@@ -118,7 +91,7 @@ final class CommentViewModel: ObservableObject {
         }
 
         statusMessage = "Starting screen capture..."
-        startTimers()
+        startReleaseTimer()
 
         let provider = selectedProvider
         let ollamaModel = selectedOllamaModel
@@ -162,21 +135,68 @@ final class CommentViewModel: ObservableObject {
 
         releaseTimer?.invalidate()
         releaseTimer = nil
-        ambientTimer?.invalidate()
-        ambientTimer = nil
 
         activeComments.removeAll()
-        pendingComments.removeAll()
+        scheduledReleases.removeAll()
         previousThumbnail = nil
-        currentMood = "general"
+        lastMood = "general"
         changeLevel = 0.05
     }
 
     func addTestComment() {
-        let pool = reactionPool["general"] ?? ["test"]
-        let text = pool.randomElement()!
+        let texts = ["test", "8888", "www", "ktkr"]
+        let text = texts.randomElement()!
         let comment = Comment(text: text, lane: Int.random(in: 0..<laneCount))
         activeComments.append(comment)
+    }
+
+    // MARK: - Persona Selection
+
+    func selectPersona() -> Persona {
+        let enabled = Persona.allCases.filter { personaEnabled[$0] == true }
+        guard !enabled.isEmpty else { return .standard }
+
+        let totalWeight = enabled.reduce(0.0) { $0 + (personaWeights[$1] ?? 0) }
+        guard totalWeight > 0 else { return enabled.randomElement()! }
+
+        let roll = Double.random(in: 0..<totalWeight)
+        var cumulative = 0.0
+        for persona in enabled {
+            cumulative += personaWeights[persona] ?? 0
+            if roll < cumulative { return persona }
+        }
+        return enabled.last!
+    }
+
+    // MARK: - Excitement
+
+    private func computeExcitementScore(changeLevel: Double, mood: String) -> Double {
+        let moodBonus: Double
+        switch mood {
+        case "excitement", "surprise": moodBonus = 0.15
+        case "funny", "beautiful": moodBonus = 0.08
+        case "general", "cute": moodBonus = 0.04
+        case "boring": moodBonus = 0.0
+        default: moodBonus = 0.04
+        }
+        return changeLevel * 0.6 + moodBonus * 0.4
+    }
+
+    private func commentCountForExcitement(_ score: Double) -> Int {
+        let base = baseCommentCount
+        let delta: Int
+        if score < 0.02 {
+            delta = -2
+        } else if score < 0.05 {
+            delta = -1
+        } else if score < 0.10 {
+            delta = 0
+        } else if score < 0.15 {
+            delta = 1
+        } else {
+            delta = 2
+        }
+        return max(1, base + delta)
     }
 
     // MARK: - Private
@@ -190,18 +210,13 @@ final class CommentViewModel: ObservableObject {
     ) async {
         let thumbnail = createThumbnail(image)
         let change = computeChangeLevel(current: thumbnail)
+        let persona = await self.selectPersona()
+        let excitement = computeExcitementScore(changeLevel: change, mood: lastMood)
+        let count = commentCountForExcitement(excitement)
+
         await MainActor.run {
             self.changeLevel = change
             self.previousThumbnail = thumbnail
-        }
-
-        let count: Int
-        if change < 0.02 {
-            count = 2
-        } else if change < 0.08 {
-            count = 4
-        } else {
-            count = 6
         }
 
         let modelName: String
@@ -211,25 +226,29 @@ final class CommentViewModel: ObservableObject {
         }
 
         await MainActor.run {
-            statusMessage = "Generating \(count) comments (\(modelName))..."
+            statusMessage = "Generating \(count) comments (\(modelName), \(persona.displayName))..."
         }
 
         do {
             let batch: CommentBatch
             switch provider {
             case .ollama:
-                batch = try await ollamaService.generateComments(from: image, model: ollamaModel, count: count)
+                batch = try await ollamaService.generateComments(
+                    from: image, model: ollamaModel, persona: persona, count: count
+                )
             case .gemini:
-                batch = try await geminiService.generateComments(from: image, model: geminiModel, apiKey: apiKey, count: count)
+                batch = try await geminiService.generateComments(
+                    from: image, model: geminiModel, apiKey: apiKey, persona: persona, count: count
+                )
             }
 
             await MainActor.run {
-                self.currentMood = batch.mood
-                self.pendingComments.append(contentsOf: batch.comments)
+                self.lastMood = batch.mood
+                self.scheduleCommentRelease(batch.comments)
                 self.commentCount += batch.comments.count
-                self.statusMessage = "Running - \(modelName) | mood: \(batch.mood) (\(self.commentCount) comments)"
+                self.statusMessage = "Running - \(modelName) | \(persona.displayName) | mood: \(batch.mood) (\(self.commentCount) comments)"
             }
-            print("[ScreenCommentator] Batch (\(batch.comments.count)): \(batch.comments) mood=\(batch.mood) change=\(String(format: "%.3f", change))")
+            print("[ScreenCommentator] Batch (\(batch.comments.count)): \(batch.comments) mood=\(batch.mood) persona=\(persona.rawValue) change=\(String(format: "%.3f", change))")
         } catch is CancellationError {
             print("[ScreenCommentator] Request cancelled")
         } catch {
@@ -240,53 +259,42 @@ final class CommentViewModel: ObservableObject {
         }
     }
 
-    private func startTimers() {
-        releaseTimer?.invalidate()
-        releaseTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.releaseNext()
-            }
+    // MARK: - Scheduled Release
+
+    private func scheduleCommentRelease(_ comments: [String]) {
+        guard !comments.isEmpty else { return }
+        let interval = captureInterval / Double(comments.count + 1)
+        let now = Date()
+
+        for (i, text) in comments.enumerated() {
+            let jitter = Double.random(in: -0.3...0.3) * interval
+            let delay = interval * Double(i + 1) + jitter
+            scheduledReleases.append((text: text, releaseAt: now.addingTimeInterval(delay)))
         }
 
-        ambientTimer?.invalidate()
-        ambientTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        scheduledReleases.sort { $0.releaseAt < $1.releaseAt }
+    }
+
+    private func startReleaseTimer() {
+        releaseTimer?.invalidate()
+        releaseTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.injectAmbient()
+                self?.releaseScheduled()
             }
         }
     }
 
-    private func releaseNext() {
+    private func releaseScheduled() {
         let now = Date()
         activeComments.removeAll { now.timeIntervalSince($0.timestamp) > commentDuration }
 
-        if activeComments.count < maxActiveComments, !pendingComments.isEmpty {
-            let text = pendingComments.removeFirst()
-            let comment = Comment(text: text, lane: Int.random(in: 0..<laneCount))
+        while !scheduledReleases.isEmpty,
+              activeComments.count < maxActiveComments,
+              scheduledReleases.first!.releaseAt <= now {
+            let entry = scheduledReleases.removeFirst()
+            let comment = Comment(text: entry.text, lane: Int.random(in: 0..<laneCount))
             activeComments.append(comment)
         }
-    }
-
-    private func injectAmbient() {
-        guard isRunning else { return }
-        guard ambientEnabled else { return }
-        guard activeComments.count < maxActiveComments else { return }
-
-        let probability: Double
-        if changeLevel < 0.02 {
-            probability = 0.1
-        } else if changeLevel < 0.08 {
-            probability = 0.25
-        } else {
-            probability = 0.8
-        }
-
-        guard Double.random(in: 0...1) < probability else { return }
-
-        let pool = reactionPool[currentMood] ?? reactionPool["general"]!
-        let text = pool.randomElement()!
-        let comment = Comment(text: text, lane: Int.random(in: 0..<laneCount))
-        activeComments.append(comment)
     }
 
     // MARK: - Scene Change Detection

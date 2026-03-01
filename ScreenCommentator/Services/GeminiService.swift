@@ -9,6 +9,7 @@ final class GeminiService {
         from image: CGImage,
         model: GeminiModel,
         apiKey: String,
+        persona: Persona,
         count: Int
     ) async throws -> CommentBatch {
         let base64Image = try ImageEncoder.encodeToBase64JPEG(image)
@@ -20,20 +21,7 @@ final class GeminiService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
-        let prompt = """
-            このスクリーンショットに映っているものについて、短いコメントを\(count)個書け。
-            画面の内容を具体的に見て反応しろ。何が映っているか、色、テキスト、レイアウトなど具体的に触れろ。
-            1行1コメント。10文字前後。句読点禁止。タメ口。
-            最終行にmood(excitement/funny/surprise/cute/boring/beautiful/general)を1単語だけ書け。
-
-            例(ブラウザが映っている場合):
-            YouTube開いてるじゃん
-            ダークモードだ
-            タブ開きすぎ
-            検索バーでかいな
-            いい感じの画面
-            general
-            """
+        let prompt = Persona.buildPrompt(persona: persona, count: count)
 
         let payload: [String: Any] = [
             "contents": [
@@ -71,67 +59,7 @@ final class GeminiService {
             throw GeminiError.invalidResponse
         }
 
-        return parseBatchResponse(text)
-    }
-
-    private func parseBatchResponse(_ text: String) -> CommentBatch {
-        var lines = text
-            .components(separatedBy: .newlines)
-            .map { cleanCommentLine($0) }
-            .filter { !$0.isEmpty }
-
-        var mood = "general"
-        if let lastLine = lines.last {
-            let normalized = lastLine.lowercased()
-                .replacingOccurrences(of: "mood:", with: "")
-                .replacingOccurrences(of: "mood", with: "")
-                .trimmingCharacters(in: .whitespaces)
-            if validMoods.contains(normalized) {
-                mood = normalized
-                lines.removeLast()
-            }
-        }
-
-        let comments = lines.compactMap { line -> String? in
-            let trimmed = String(line.prefix(40))
-            guard trimmed.count >= 1 else { return nil }
-            if isRepetitive(trimmed) { return nil }
-            return trimmed
-        }
-
-        return CommentBatch(comments: comments, mood: mood)
-    }
-
-    private func cleanCommentLine(_ line: String) -> String {
-        var result = line.trimmingCharacters(in: .whitespaces)
-
-        if let regex = try? NSRegularExpression(pattern: "^\\d+[.):\\s]+", options: []) {
-            result = regex.stringByReplacingMatches(
-                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: ""
-            )
-        }
-
-        if result.hasPrefix("- ") {
-            result = String(result.dropFirst(2))
-        }
-
-        result = result.replacingOccurrences(of: "\u{3002}", with: "")
-        result = result.replacingOccurrences(of: "\u{3001}", with: "")
-        result = result.replacingOccurrences(of: "\u{FF01}", with: "")
-
-        if result.hasPrefix("*") || result.hasPrefix("#") {
-            return ""
-        }
-
-        return result.trimmingCharacters(in: .whitespaces)
-    }
-
-    private func isRepetitive(_ text: String) -> Bool {
-        guard text.count >= 4 else { return false }
-        let chars = Array(text)
-        let firstChar = chars[0]
-        let sameCount = chars.filter { $0 == firstChar }.count
-        return Double(sameCount) / Double(chars.count) > 0.8
+        return CommentParser.parseBatchResponse(text)
     }
 }
 

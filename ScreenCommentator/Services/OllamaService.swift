@@ -31,7 +31,7 @@ enum OllamaModel: String, CaseIterable, Identifiable, Sendable {
 final class OllamaService {
     private let baseURL = "http://127.0.0.1:11434"
 
-    func generateComments(from image: CGImage, model: OllamaModel, count: Int) async throws -> CommentBatch {
+    func generateComments(from image: CGImage, model: OllamaModel, persona: Persona, count: Int) async throws -> CommentBatch {
         let base64Image = try ImageEncoder.encodeToBase64JPEG(image)
 
         let url = URL(string: "\(baseURL)/api/chat")!
@@ -40,20 +40,7 @@ final class OllamaService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 120
 
-        let prompt = """
-            このスクリーンショットに映っているものについて、短いコメントを\(count)個書け。
-            画面の内容を具体的に見て反応しろ。何が映っているか、色、テキスト、レイアウトなど具体的に触れろ。
-            1行1コメント。10文字前後。句読点禁止。タメ口。
-            最終行にmood(excitement/funny/surprise/cute/boring/beautiful/general)を1単語だけ書け。
-
-            例(ブラウザが映っている場合):
-            YouTube開いてるじゃん
-            ダークモードだ
-            タブ開きすぎ
-            検索バーでかいな
-            いい感じの画面
-            general
-            """
+        let prompt = Persona.buildPrompt(persona: persona, count: count)
 
         let numPredict = model.isThinkingModel ? 512 : (count * 25 + 30)
 
@@ -96,86 +83,7 @@ final class OllamaService {
             throw OllamaError.invalidResponse
         }
 
-        return parseBatchResponse(content)
-    }
-
-    private func parseBatchResponse(_ text: String) -> CommentBatch {
-        var cleaned = text
-
-        if let regex = try? NSRegularExpression(pattern: "<think>[\\s\\S]*?</think>", options: []) {
-            cleaned = regex.stringByReplacingMatches(
-                in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: ""
-            )
-        }
-
-        if let regex = try? NSRegularExpression(pattern: "<\\|[^|]*\\|>[^<]*", options: []) {
-            cleaned = regex.stringByReplacingMatches(
-                in: cleaned, range: NSRange(cleaned.startIndex..., in: cleaned), withTemplate: ""
-            )
-        }
-
-        var lines = cleaned
-            .components(separatedBy: .newlines)
-            .map { cleanCommentLine($0) }
-            .filter { !$0.isEmpty }
-
-        var mood = "general"
-        if let lastLine = lines.last {
-            let normalized = lastLine.lowercased()
-                .replacingOccurrences(of: "mood:", with: "")
-                .replacingOccurrences(of: "mood", with: "")
-                .trimmingCharacters(in: .whitespaces)
-            if validMoods.contains(normalized) {
-                mood = normalized
-                lines.removeLast()
-            }
-        }
-
-        let comments = lines.compactMap { line -> String? in
-            let trimmed = String(line.prefix(40))
-            guard trimmed.count >= 1 else { return nil }
-            if isRepetitive(trimmed) { return nil }
-            return trimmed
-        }
-
-        return CommentBatch(comments: comments, mood: mood)
-    }
-
-    private func cleanCommentLine(_ line: String) -> String {
-        var result = line.trimmingCharacters(in: .whitespaces)
-
-        if let regex = try? NSRegularExpression(pattern: "^\\d+[.):\\s]+", options: []) {
-            result = regex.stringByReplacingMatches(
-                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: ""
-            )
-        }
-
-        if result.hasPrefix("- ") {
-            result = String(result.dropFirst(2))
-        }
-
-        result = result.replacingOccurrences(of: "\u{3002}", with: "")
-        result = result.replacingOccurrences(of: "\u{3001}", with: "")
-        result = result.replacingOccurrences(of: "\u{FF01}", with: "")
-
-        if let regex = try? NSRegularExpression(
-            pattern: "[\\u{1F300}-\\u{1F9FF}\\u{2600}-\\u{27BF}\\u{FE00}-\\u{FE0F}\\u{200D}]",
-            options: []
-        ) {
-            result = regex.stringByReplacingMatches(
-                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: ""
-            )
-        }
-
-        return result.trimmingCharacters(in: .whitespaces)
-    }
-
-    private func isRepetitive(_ text: String) -> Bool {
-        guard text.count >= 4 else { return false }
-        let chars = Array(text)
-        let firstChar = chars[0]
-        let sameCount = chars.filter { $0 == firstChar }.count
-        return Double(sameCount) / Double(chars.count) > 0.8
+        return CommentParser.parseBatchResponse(content)
     }
 
     func checkConnection() async -> Bool {
