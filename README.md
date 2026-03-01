@@ -1,108 +1,119 @@
 # Screen Commentator
 
-macOS app that captures your screen in real-time and generates scrolling comments (like Niconico / Twitch chat overlay) using AI vision models.
+画面をリアルタイムにキャプチャし、AI Vision モデルでニコニコ風のスクロールコメントを生成する macOS アプリ。
 
-## What it does
+## デモ
 
-- Captures your screen every few seconds
-- Sends the screenshot to a vision model (local Ollama or Google Gemini API)
-- Generates short comments reacting to what's on screen
-- Displays them as a transparent overlay scrolling across your screen
+https://x.com/r1ca18/status/2028052923536822643
 
-## Supported Providers
+## 何ができるか
 
-### Ollama (Local)
+- 数秒ごとに画面をキャプチャ
+- スクリーンショットを Vision モデル（ローカル Ollama / Google Gemini API）に送信
+- 画面の内容に対する短いコメントを生成
+- 透明なオーバーレイとして画面上をスクロール表示
 
-Runs entirely on your machine. No API key needed.
+## 注意事項
 
-| Model         | Speed  | Quality                 |
-| ------------- | ------ | ----------------------- |
-| Qwen2.5-VL 3B | Fast   | Basic                   |
-| Gemma 3 4B    | Medium | Good                    |
-| Gemma 3 12B   | Slow   | Better                  |
-| Qwen3-VL 8B   | Slow   | Better (thinking model) |
+- ローカルモデル（Ollama）はマシンスペックによってレスポンスのラグが大きく変わる。MacBook Pro M4 / メモリ 64GB でもラグが目立ったため、10 秒程度のレスポンスを求める場合は Gemini API の利用を推奨
+- Gemini（クラウド）利用時はスクリーンショットが Google の API に送信される。画面に機密情報が映っている場合は注意。利用は自己責任で
+- 現状は軽量モデル（Qwen3, Gemini 2.5 等）を使用しており、コメント品質には改善の余地がある
+- PR 歓迎
 
-### Gemini (Cloud)
+## 対応プロバイダ
 
-Uses Google's Gemini API. Requires a free API key from [Google AI Studio](https://aistudio.google.com/app/apikey).
+### Ollama（ローカル）
 
-| Model           | Speed   | Quality | Cost          |
-| --------------- | ------- | ------- | ------------- |
-| 2.5 Flash Lite  | Fastest | Good    | $0.10/M input |
-| 2.5 Flash       | Fast    | Great   | $0.30/M input |
-| 3 Flash Preview | Medium  | Best    | $0.50/M input |
+完全にローカルで動作。API キー不要。
 
-## Features
+| モデル        | 速度 | 品質                   |
+| ------------- | ---- | ---------------------- |
+| Qwen2.5-VL 3B | 速い | 基本的                 |
+| Gemma 3 4B    | 普通 | 良い                   |
+| Gemma 3 12B   | 遅い | より良い               |
+| Qwen3-VL 8B   | 遅い | より良い（思考モデル） |
 
-- **Provider selection**: Switch between local (Ollama) and cloud (Gemini) models
-- **Ambient reactions**: Mood-matched local reactions injected between API calls (toggleable)
-- **Scene change detection**: Comment volume adjusts dynamically based on screen activity
-- **Text style controls**: Font size, opacity, and weight adjustable in real-time
-- **Transparent overlay**: Click-through overlay that works on top of any app
+### Gemini（クラウド）
 
-## Requirements
+Google の Gemini API を使用。[Google AI Studio](https://aistudio.google.com/app/apikey) から無料の API キーを取得可能。
+
+| モデル          | 速度 | 品質 | コスト        |
+| --------------- | ---- | ---- | ------------- |
+| 2.5 Flash Lite  | 最速 | 良い | $0.10/M input |
+| 2.5 Flash       | 速い | 優秀 | $0.30/M input |
+| 3 Flash Preview | 普通 | 最高 | $0.50/M input |
+
+## 機能
+
+- **プロバイダ切り替え**: ローカル（Ollama）とクラウド（Gemini）を切り替え可能
+- **アンビエントリアクション**: API 呼び出しの合間にムードに合ったローカル生成のリアクションを挿入（ON/OFF 可能）
+- **画面変化検出**: 画面の変化量に応じてコメント量を動的に調整
+- **テキストスタイル調整**: フォントサイズ、透明度、太さをリアルタイムに変更可能
+- **透明オーバーレイ**: あらゆるアプリの上に表示されるクリックスルーなオーバーレイ
+
+## 必要環境
 
 - macOS 13.0+
-- Xcode 16.0+ (to build)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) (to generate the Xcode project)
-- For Ollama: [Ollama](https://ollama.com) with a vision model installed
-- For Gemini: A Google AI API key (free tier available)
+- Xcode 16.0+（ビルド用）
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)（Xcode プロジェクト生成用）
+- Ollama 利用時: [Ollama](https://ollama.com) + Vision モデルのインストール
+- Gemini 利用時: Google AI API キー（無料枠あり）
 
-## Setup
+## セットアップ
 
 ```bash
 git clone https://github.com/r1cka/screen-commentator.git
 cd screen-commentator
 
-# Generate Xcode project
+# Xcode プロジェクトを生成
 xcodegen generate
 
-# Open in Xcode and build (Cmd+R)
+# Xcode で開いてビルド (Cmd+R)
 open ScreenCommentator.xcodeproj
 ```
 
-Grant Screen Recording permission when prompted on first run.
+初回起動時に画面収録の権限を求められるので許可する。
 
-### Ollama setup
+### Ollama のセットアップ
 
 ```bash
 ollama pull qwen2.5vl:3b
 ```
 
-### Gemini setup
+### Gemini のセットアップ
 
-1. Get a free API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Select "Gemini (Cloud)" in the app
-3. Paste your API key
+1. [Google AI Studio](https://aistudio.google.com/app/apikey) から無料の API キーを取得
+2. アプリ内で "Gemini (Cloud)" を選択
+3. API キーを貼り付け
 
-## Architecture
+## アーキテクチャ
 
 ```
 ScreenCommentator/
-  App.swift                          # Entry point, overlay setup
+  App.swift                          # エントリーポイント、オーバーレイ設定
   Models/
-    Comment.swift                    # Comment data model, CommentBatch
-    Provider.swift                   # Provider & model enums
+    Comment.swift                    # コメントデータモデル、CommentBatch
+    Provider.swift                   # プロバイダ・モデル定義
   Services/
-    ImageEncoder.swift               # Screenshot -> JPEG base64
-    OllamaService.swift              # Local Ollama API client
-    GeminiService.swift              # Google Gemini API client
-    ScreenCaptureService.swift       # macOS screen capture via ScreenCaptureKit
+    ImageEncoder.swift               # スクリーンショット -> JPEG base64
+    OllamaService.swift              # ローカル Ollama API クライアント
+    GeminiService.swift              # Google Gemini API クライアント
+    ScreenCaptureService.swift       # ScreenCaptureKit による画面キャプチャ
   ViewModels/
-    CommentViewModel.swift           # Core logic: capture -> generate -> display
+    CommentViewModel.swift           # コアロジック: キャプチャ -> 生成 -> 表示
   Views/
-    ContentView.swift                # Control panel UI
-    OverlayWindow.swift              # Transparent scrolling comment overlay
+    ContentView.swift                # コントロールパネル UI
+    OverlayWindow.swift              # 透明スクロールコメントオーバーレイ
 ```
 
-## How it works
+## 仕組み
 
-1. **Screen capture**: ScreenCaptureKit captures the display at a set interval
-2. **Scene change detection**: Compares 32x32 thumbnails to estimate screen activity
-3. **Comment generation**: Sends screenshot to selected AI model for short comments
-4. **Mood classification**: AI returns a mood tag (excitement, funny, surprise, etc.)
-5. **Ambient reactions**: Between API calls, mood-matched reactions are injected locally
-6. **Overlay rendering**: Comments scroll right-to-left across a transparent overlay
+1. **画面キャプチャ**: ScreenCaptureKit で一定間隔にディスプレイをキャプチャ
+2. **画面変化検出**: 32x32 サムネイルを比較して画面の変化量を推定
+3. **コメント生成**: スクリーンショットを選択した AI モデルに送信し短いコメントを生成
+4. **ムード分類**: AI がムードタグ（excitement, funny, surprise 等）を返す
+5. **アンビエントリアクション**: API 呼び出しの合間にムードに合ったリアクションをローカル生成
+6. **オーバーレイ描画**: コメントが透明オーバーレイ上を右から左にスクロール
 
 ## License
 
