@@ -1,5 +1,21 @@
 import Foundation
 
+enum PipelineMode: String, CaseIterable, Identifiable, Sendable {
+    case smart
+    case ocrEnhanced
+    case basic
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .smart: return "Smart"
+        case .ocrEnhanced: return "OCR Enhanced"
+        case .basic: return "Basic"
+        }
+    }
+}
+
 enum CommentProvider: String, CaseIterable, Identifiable, Sendable {
     case ollama
     case gemini
@@ -26,6 +42,15 @@ enum GeminiModel: String, CaseIterable, Identifiable, Sendable {
         case .flash25Lite: return "2.5 Flash Lite (fastest)"
         case .flash25: return "2.5 Flash (balanced)"
         case .flash3Preview: return "3 Flash Preview (best)"
+        }
+    }
+
+    var thinkingConfig: [String: Any] {
+        switch self {
+        case .flash25Lite, .flash25:
+            return ["thinkingBudget": 0]
+        case .flash3Preview:
+            return ["thinkingLevel": "minimal"]
         }
     }
 }

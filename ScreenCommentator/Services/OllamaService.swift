@@ -31,18 +31,47 @@ enum OllamaModel: String, CaseIterable, Identifiable, Sendable {
 final class OllamaService {
     private let baseURL = "http://127.0.0.1:11434"
 
-    func generateComments(from image: CGImage, model: OllamaModel, persona: Persona, count: Int) async throws -> CommentBatch {
-        let base64Image = try ImageEncoder.encodeToBase64JPEG(image)
-
+    func generateComments(
+        from image: CGImage?,
+        model: OllamaModel,
+        persona: Persona,
+        count: Int,
+        context: PromptContext,
+        pipelineMode: PipelineMode
+    ) async throws -> CommentBatch {
         let url = URL(string: "\(baseURL)/api/chat")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 120
 
-        let prompt = Persona.buildPrompt(persona: persona, count: count)
+        let prompt: String
+        let includeImage: Bool
+        let useJsonFormat: Bool
 
-        let numPredict = model.isThinkingModel ? 512 : (count * 25 + 30)
+        switch pipelineMode {
+        case .smart:
+            prompt = Persona.buildSmartPrompt(enabledPersonas: context.enabledPersonas, count: count, context: context)
+            includeImage = true
+            useJsonFormat = true
+        case .ocrEnhanced:
+            prompt = Persona.buildOCRPrompt(persona: persona, count: count, context: context)
+            includeImage = false
+            useJsonFormat = false
+        case .basic:
+            prompt = Persona.buildBasicPrompt(persona: persona, count: count)
+            includeImage = true
+            useJsonFormat = false
+        }
+
+        let numPredict: Int
+        if model.isThinkingModel {
+            numPredict = 512
+        } else if useJsonFormat {
+            numPredict = max(300, count * 40 + 60)
+        } else {
+            numPredict = count * 25 + 30
+        }
 
         var options: [String: Any] = [
             "temperature": 0.9,
@@ -54,19 +83,28 @@ final class OllamaService {
             options["num_ctx"] = 2048
         }
 
-        let payload: [String: Any] = [
+        var messageContent: [[String: Any]] = [
+            ["role": "user", "content": prompt],
+        ]
+
+        if includeImage, let image {
+            let base64Image = try ImageEncoder.encodeToBase64JPEG(image)
+            messageContent = [
+                ["role": "user", "content": prompt, "images": [base64Image]],
+            ]
+        }
+
+        var payload: [String: Any] = [
             "model": model.rawValue,
-            "messages": [
-                [
-                    "role": "user",
-                    "content": prompt,
-                    "images": [base64Image],
-                ],
-            ],
+            "messages": messageContent,
             "stream": false,
             "options": options,
             "keep_alive": "10m",
         ]
+
+        if useJsonFormat {
+            payload["format"] = "json"
+        }
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
@@ -83,7 +121,13 @@ final class OllamaService {
             throw OllamaError.invalidResponse
         }
 
-        return CommentParser.parseBatchResponse(content)
+        print("[ScreenCommentator] Ollama raw response: \(content.prefix(500))")
+
+        if useJsonFormat {
+            return CommentParser.parseStructuredResponse(content)
+        } else {
+            return CommentParser.parseBatchResponse(content)
+        }
     }
 
     func checkConnection() async -> Bool {

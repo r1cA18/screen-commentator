@@ -60,14 +60,27 @@ struct OverlayContentView: View {
                     .contentShape(Rectangle())
 
                 ForEach(viewModel.activeComments) { comment in
-                    ScrollingCommentView(
-                        comment: comment,
-                        screenWidth: geometry.size.width,
-                        yPosition: CGFloat(comment.lane) * CommentViewModel.laneHeight + CommentViewModel.topMargin,
-                        fontSize: viewModel.fontSize,
-                        textOpacity: viewModel.textOpacity,
-                        fontWeightBold: viewModel.fontWeightBold
-                    )
+                    switch comment.style {
+                    case .scroll:
+                        ScrollingCommentView(
+                            comment: comment,
+                            screenWidth: geometry.size.width,
+                            yPosition: CGFloat(comment.lane) * CommentViewModel.laneHeight + CommentViewModel.topMargin,
+                            fontSize: viewModel.fontSize,
+                            textOpacity: viewModel.textOpacity,
+                            fontWeightBold: viewModel.fontWeightBold,
+                            scrollDuration: viewModel.scrollDuration
+                        )
+                    case .top, .bottom:
+                        FixedCommentView(
+                            comment: comment,
+                            screenWidth: geometry.size.width,
+                            screenHeight: geometry.size.height,
+                            fontSize: viewModel.fontSize,
+                            textOpacity: viewModel.textOpacity,
+                            fontWeightBold: viewModel.fontWeightBold
+                        )
+                    }
                 }
             }
         }
@@ -85,13 +98,18 @@ struct ScrollingCommentView: View {
     let fontSize: CGFloat
     let textOpacity: Double
     let fontWeightBold: Bool
+    let scrollDuration: Double
 
     @State private var xOffset: CGFloat = 10000
+
+    private var effectiveDuration: Double {
+        scrollDuration * comment.speedMultiplier
+    }
 
     var body: some View {
         Text(comment.text)
             .font(.system(size: fontSize, weight: fontWeightBold ? .bold : .regular))
-            .foregroundColor(.white.opacity(textOpacity))
+            .foregroundColor(Color.white.opacity(textOpacity))
             .shadow(color: .black, radius: 2, x: 1, y: 1)
             .shadow(color: .black, radius: 1, x: -1, y: -1)
             .fixedSize()
@@ -99,9 +117,49 @@ struct ScrollingCommentView: View {
             .task {
                 xOffset = screenWidth
                 try? await Task.sleep(for: .milliseconds(16))
-                withAnimation(.linear(duration: 6.0)) {
+                withAnimation(.linear(duration: effectiveDuration)) {
                     xOffset = -600
                 }
+            }
+    }
+}
+
+// MARK: - FixedCommentView
+
+struct FixedCommentView: View {
+    let comment: Comment
+    let screenWidth: CGFloat
+    let screenHeight: CGFloat
+    let fontSize: CGFloat
+    let textOpacity: Double
+    let fontWeightBold: Bool
+
+    @State private var opacity: Double = 0
+
+    private var yPosition: CGFloat {
+        switch comment.style {
+        case .top: return screenHeight * 0.15
+        case .bottom: return screenHeight * 0.85
+        case .scroll: return screenHeight * 0.5
+        }
+    }
+
+    private var fixedFontSize: CGFloat { fontSize * 1.5 }
+
+    var body: some View {
+        Text(comment.text)
+            .font(.system(size: fixedFontSize, weight: fontWeightBold ? .bold : .regular))
+            .foregroundColor(comment.color.swiftUIColor.opacity(textOpacity))
+            .shadow(color: .black, radius: 2, x: 1, y: 1)
+            .shadow(color: .black, radius: 1, x: -1, y: -1)
+            .fixedSize()
+            .frame(width: screenWidth, alignment: .center)
+            .offset(y: yPosition)
+            .opacity(opacity)
+            .task {
+                withAnimation(.easeIn(duration: 0.2)) { opacity = 1 }
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation(.easeOut(duration: 0.5)) { opacity = 0 }
             }
     }
 }

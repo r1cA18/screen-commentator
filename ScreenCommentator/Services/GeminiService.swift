@@ -6,14 +6,14 @@ final class GeminiService {
     private let baseURL = "https://generativelanguage.googleapis.com/v1beta/models"
 
     func generateComments(
-        from image: CGImage,
+        from image: CGImage?,
         model: GeminiModel,
         apiKey: String,
         persona: Persona,
-        count: Int
+        count: Int,
+        context: PromptContext,
+        pipelineMode: PipelineMode
     ) async throws -> CommentBatch {
-        let base64Image = try ImageEncoder.encodeToBase64JPEG(image)
-
         let url = URL(string: "\(baseURL)/\(model.rawValue):generateContent?key=\(apiKey)")!
 
         var request = URLRequest(url: url)
@@ -21,21 +21,46 @@ final class GeminiService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
-        let prompt = Persona.buildPrompt(persona: persona, count: count)
+        let prompt: String
+        let includeImage: Bool
+        let useJsonMode: Bool
+
+        switch pipelineMode {
+        case .smart:
+            prompt = Persona.buildSmartPrompt(enabledPersonas: context.enabledPersonas, count: count, context: context)
+            includeImage = true
+            useJsonMode = true
+        case .ocrEnhanced:
+            prompt = Persona.buildOCRPrompt(persona: persona, count: count, context: context)
+            includeImage = false
+            useJsonMode = false
+        case .basic:
+            prompt = Persona.buildBasicPrompt(persona: persona, count: count)
+            includeImage = true
+            useJsonMode = false
+        }
+
+        var parts: [[String: Any]] = []
+
+        if includeImage, let image {
+            let base64Image = try ImageEncoder.encodeToBase64JPEG(image)
+            parts.append(["inline_data": ["mime_type": "image/jpeg", "data": base64Image]])
+        }
+        parts.append(["text": prompt])
+
+        var generationConfig: [String: Any] = [
+            "temperature": 0.9,
+            "maxOutputTokens": useJsonMode ? 1024 : 400,
+            "thinkingConfig": model.thinkingConfig,
+        ]
+
+        if useJsonMode {
+            generationConfig["responseMimeType"] = "application/json"
+        }
 
         let payload: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        ["inline_data": ["mime_type": "image/jpeg", "data": base64Image]],
-                        ["text": prompt],
-                    ],
-                ],
-            ],
-            "generationConfig": [
-                "temperature": 0.9,
-                "maxOutputTokens": 200,
-            ],
+            "contents": [["parts": parts]],
+            "generationConfig": generationConfig,
         ]
 
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
@@ -54,12 +79,22 @@ final class GeminiService {
         let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let candidates = json?["candidates"] as? [[String: Any]]
         let content = candidates?.first?["content"] as? [String: Any]
-        let parts = content?["parts"] as? [[String: Any]]
-        guard let text = parts?.first?["text"] as? String else {
+        let responseParts = content?["parts"] as? [[String: Any]]
+
+        // Gemini 2.5+ thinking models return [{"thought":true,"text":"..."}, {"text":"actual output"}]
+        // Use the last non-thought part
+        guard let text = responseParts?
+            .last(where: { $0["thought"] as? Bool != true })?["text"] as? String else {
             throw GeminiError.invalidResponse
         }
 
-        return CommentParser.parseBatchResponse(text)
+        print("[ScreenCommentator] Gemini raw response: \(text.prefix(500))")
+
+        if useJsonMode {
+            return CommentParser.parseStructuredResponse(text)
+        } else {
+            return CommentParser.parseBatchResponse(text)
+        }
     }
 }
 

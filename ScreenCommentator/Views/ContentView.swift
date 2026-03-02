@@ -11,7 +11,7 @@ struct ContentView: View {
             Divider()
             footer
         }
-        .frame(width: 360, height: 560)
+        .frame(width: 360, height: 640)
     }
 
     // MARK: - Header
@@ -71,6 +71,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 20) {
                 providerSection
                 generationSection
+                blacklistSection
                 appearanceSection
             }
             .padding(16)
@@ -114,8 +115,30 @@ struct ContentView: View {
                 SecureField("API Key", text: $viewModel.geminiApiKey)
                     .textFieldStyle(.roundedBorder)
             }
+
+            sectionLabel("Pipeline")
+
+            Picker("Pipeline", selection: $viewModel.pipelineMode) {
+                ForEach(PipelineMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+
+            Text(pipelineHint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .disabled(viewModel.isRunning)
+    }
+
+    private var pipelineHint: String {
+        switch viewModel.pipelineMode {
+        case .smart: return "VLM structured JSON output (Gemini recommended)"
+        case .ocrEnhanced: return "OCR text extraction, no image sent to LLM"
+        case .basic: return "Image + simple prompt (legacy)"
+        }
     }
 
     private var generationSection: some View {
@@ -186,7 +209,73 @@ struct ContentView: View {
                     .frame(width: 36, alignment: .trailing)
             }
 
+            HStack(spacing: 8) {
+                Text("Speed")
+                    .frame(width: 50, alignment: .leading)
+                Slider(value: $viewModel.scrollDuration, in: 2.0...10.0, step: 0.5)
+                Text("\(String(format: "%.1f", viewModel.scrollDuration))s")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .frame(width: 36, alignment: .trailing)
+            }
+
             Toggle("Bold", isOn: $viewModel.fontWeightBold)
+        }
+    }
+
+    // MARK: - Blacklist
+
+    @State private var newBlacklistPattern = ""
+
+    private var blacklistSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionLabel("Blacklist Monitor")
+
+            Toggle("Enable", isOn: $viewModel.blacklistEnabled)
+
+            if viewModel.blacklistEnabled {
+                if viewModel.isBlacklistTriggered {
+                    Text("TRIGGERED - Roast mode active")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+
+                ForEach(viewModel.blacklistManager.entries) { entry in
+                    HStack(spacing: 6) {
+                        Image(systemName: entry.matchType == .url ? "globe" : "app")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14)
+                            .font(.caption2)
+                        Text(entry.pattern)
+                            .font(.caption)
+                        Spacer()
+                        Button {
+                            if let idx = viewModel.blacklistManager.entries.firstIndex(where: { $0.id == entry.id }) {
+                                viewModel.blacklistManager.entries.remove(at: idx)
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                                .font(.caption2)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    TextField("e.g. youtube.com", text: $newBlacklistPattern)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.caption)
+                    Button("Add") {
+                        let pattern = newBlacklistPattern.trimmingCharacters(in: .whitespaces)
+                        guard !pattern.isEmpty else { return }
+                        viewModel.blacklistManager.add(BlacklistEntry(pattern: pattern))
+                        newBlacklistPattern = ""
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
         }
     }
 

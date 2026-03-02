@@ -20,6 +20,8 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>This app reads browser URLs to detect blacklisted sites.</string>
     <key>NSScreenCaptureDescription</key>
     <string>This app needs screen recording permission to capture your screen and generate comments.</string>
 </dict>
