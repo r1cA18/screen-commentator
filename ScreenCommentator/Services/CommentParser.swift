@@ -8,7 +8,7 @@ enum CommentParser {
     private static let specialTagRegex = try! NSRegularExpression(pattern: "<\\|[^|]*\\|>[^<]*")
     private static let numberedPrefixRegex = try! NSRegularExpression(pattern: "^\\d+[.):\\s]+")
     private static let emojiRegex = try! NSRegularExpression(
-        pattern: "[\\u{1F300}-\\u{1F9FF}\\u{2600}-\\u{27BF}\\u{FE00}-\\u{FE0F}\\u{200D}]"
+        pattern: "[\\x{1F300}-\\x{1F9FF}\\x{2600}-\\x{27BF}\\x{FE00}-\\x{FE0F}\\x{200D}]"
     )
 
     // MARK: - Structured JSON response (Smart)
