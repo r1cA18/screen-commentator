@@ -204,3 +204,4 @@ Smart mode との違いは、画像を LLM に送信しない点。代わりに 
 ## License
 
 MIT
+
